@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ◈ AERO·ROSE  —  Wind Rose Diagram Generator  v7
-WEB by ABDUL SAMAD | Run: python windrose_final.py
+MADE by MANIA SIDDIQUI | Run: python windrose_final.py
 """
 import sys, subprocess, io
 
@@ -1140,7 +1140,7 @@ def main():
       {compass_svg(T['acc'],145)}
       <div class="ar-eyebrow">
         <span class="ar-dot"></span>
-        TRANSPORTATION ENGINEERING II  ·  RUNWAY ANALYSIS TOOL
+        RUNWAY ORIENTATION TOOL
         <span class="ar-dot"></span>
       </div>
       <div class="ar-title">&#9672;&nbsp;AERO <em>ROSE</em></div>
@@ -1460,7 +1460,7 @@ def main():
                 st.download_button(
                     label="⬇  Export Frequency Table CSV",
                     data=freq_to_csv(freq),
-                    file_name="wind_frequency_table.csv",
+                    file_name="wind_frequency_data.csv",
                     mime="text/csv",
                     key="csv_dl")
 
@@ -1490,7 +1490,7 @@ def main():
         _pl=st.session_state.get('_pdf_logo',None)
 
 
-        st.info("Thank  you! Now you can Download you Report.")
+        st.info("Download you Report.")
 
         _,dc,_=st.columns([1,2,1])
         with dc:
@@ -1506,9 +1506,9 @@ def main():
       <div class="ar-footer-brand">&#9672; AERO&middot;ROSE</div>
       <div class="ar-footer-line">Wind Rose Diagram Generator &nbsp;&middot;&nbsp; Transportation Engineering II</div>
       <div style="font-family:'Bebas Neue',cursive;font-size:.88rem;
-           letter-spacing:.2em;color:{T['acc']};margin:.7rem 0 .3rem;">WEB BY ABDUL SAMAD</div>
+           letter-spacing:.2em;color:{T['acc']};margin:.7rem 0 .3rem;">MADE BY MANIA SIDDIQUI</div>
       <div class="ar-footer-line">
-        Contact: <a class="ar-footer-link" href="mailto:abdulsamad@gmail.com">abdulsamad@gmail.com</a>
+        Contact: <a class="ar-footer-link" href="mailto:mania siddiqui@gmail.com">maniasiddiqui@gmail.com</a>
       
     </div>""",unsafe_allow_html=True)
 
