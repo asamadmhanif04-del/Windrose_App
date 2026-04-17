@@ -1168,31 +1168,6 @@ def main():
 
     st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
 
-    # ── HOW IT WORKS ─────────────────────────────────────────────
-    st.markdown('<div class="ar-lbl">How It Works</div>',unsafe_allow_html=True)
-    hc1,hc2=st.columns(2,gap="large")
-    steps=[("Upload","CSV or Excel with wind direction + speed data"),
-           ("Map","Select direction and speed columns"),
-           ("Configure","Speed unit and direction format"),
-           ("Details","Name, roll no, site — appear in PDF footer"),
-           ("Generate","Animated runway progress bar while processing"),
-           ("Download","A4 PDF + Frequency Table CSV export")]
-    with hc1:
-        st.markdown('<div class="ar-card">',unsafe_allow_html=True)
-        for i,(t,d) in enumerate(steps[:3],1):
-            st.markdown(f'<div class="ar-step"><div class="ar-step-num">{i}</div>'
-                        f'<div><div class="ar-step-title">{t}</div>'
-                        f'<div class="ar-step-desc">{d}</div></div></div>',
-                        unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-    with hc2:
-        st.markdown('<div class="ar-card">',unsafe_allow_html=True)
-        for i,(t,d) in enumerate(steps[3:],4):
-            st.markdown(f'<div class="ar-step"><div class="ar-step-num">{i}</div>'
-                        f'<div><div class="ar-step-title">{t}</div>'
-                        f'<div class="ar-step-desc">{d}</div></div></div>',
-                        unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
 
     # ── DIAGRAM TYPES ─────────────────────────────────────────────
     st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
