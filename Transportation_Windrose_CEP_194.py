@@ -5,6 +5,7 @@ MADE by MANIA SIDDIQUI | Run: python windrose_final.py
 """
 import sys, subprocess, io
 
+
 def _in_streamlit():
     try:
         from streamlit.runtime.scriptrunner import get_script_run_ctx
@@ -12,26 +13,30 @@ def _in_streamlit():
     except Exception:
         return False
 
+
 if __name__ == "__main__" and not _in_streamlit():
-    DEPS = [("streamlit","streamlit"),("matplotlib","matplotlib"),
-            ("numpy","numpy"),("pandas","pandas"),
-            ("reportlab","reportlab"),("openpyxl","openpyxl"),("Pillow","PIL")]
-    print("\n  ◈  AERO·ROSE  —  Wind Rose Generator\n  " + "─"*40)
+    DEPS = [("streamlit", "streamlit"), ("matplotlib", "matplotlib"),
+            ("numpy", "numpy"), ("pandas", "pandas"),
+            ("reportlab", "reportlab"), ("openpyxl", "openpyxl"), ("Pillow", "PIL")]
+    print("\n  ◈  AERO·ROSE  —  Wind Rose Generator\n  " + "─" * 40)
     for pkg, mod in DEPS:
-        try: __import__(mod)
+        try:
+            __import__(mod)
         except ImportError:
             print(f"  Installing {pkg}…")
             subprocess.check_call(
-                [sys.executable,"-m","pip","install",pkg,"-q","--disable-pip-version-check"],
+                [sys.executable, "-m", "pip", "install", pkg, "-q", "--disable-pip-version-check"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print("  Launching →  http://localhost:8501\n")
-    subprocess.run([sys.executable,"-m","streamlit","run",__file__,
-        "--server.port=8501","--server.headless=false",
-        "--browser.gatherUsageStats=false"])
+    subprocess.run([sys.executable, "-m", "streamlit", "run", __file__,
+                    "--server.port=8501", "--server.headless=false",
+                    "--browser.gatherUsageStats=false"])
     sys.exit(0)
 
 # ══════════════════════════════════════════════════════════════════════
-import matplotlib; matplotlib.use("Agg")
+import matplotlib;
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
@@ -43,71 +48,80 @@ from reportlab.lib import colors as RC
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                 Image as RLImage, PageBreak, HRFlowable)
+                                Image as RLImage, PageBreak, HRFlowable)
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-st.set_page_config(page_title="◈ AERO·ROSE", page_icon="🧭",
+st.set_page_config(page_title="◈ AERO·ROSE", page_icon="◈",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # ══════════════════════════════════════════════════════════════════════
 #  CONSTANTS
 # ══════════════════════════════════════════════════════════════════════
-DIRS_16    = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
-              "S","SSW","SW","WSW","W","WNW","NW","NNW"]
-C2D        = {d: i*22.5 for i,d in enumerate(DIRS_16)}
+DIRS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+           "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+C2D = {d: i * 22.5 for i, d in enumerate(DIRS_16)}
 
-# Speed bins km/h  (5 classes matching the provided image)
-SPD_BINS   = [-0.001, 6, 25, 40, 60, 9999]
-SPD_LABELS = ["<6 km/h", "6–25 km/h", "25–40 km/h", "40–60 km/h", ">60 km/h"]
-TBL_COLS   = ["6.0–25 km/h", "25–40 km/h", "40–60 km/h"]
-TBL_IDX    = [1, 2, 3]
+# New Vibrant Colors for the 7 Distinct Speed Classes
+T2_COLORS = ["#b0bec5", "#4fc3f7", "#0288d1", "#00897b", "#fbc02d", "#f4511e", "#d32f2f"]
 
-# Very distinct colors for Type II bars (work well on white diagram background)
-T2_COLORS  = ["#b0bec5", "#1976d2", "#43a047", "#fb8c00", "#e53935"]
-# Names for legend
-T2_NAMES   = ["< 6 km/h (Calm)", "6–25 km/h", "25–40 km/h", "40–60 km/h", "> 60 km/h"]
+
+def get_unit_config(unit):
+    base_bins = [0.97, 4.08, 7.00, 11.08, 17.11, 21.58]
+    if unit == "knots":
+        b = base_bins
+    elif unit == "m/s":
+        b = [round(x * 0.514444, 2) for x in base_bins]
+    else:  # km/h
+        b = [round(x * 1.852, 2) for x in base_bins]
+
+    bins = [-0.001] + b + [9999.0]
+    tbl_cols = [f"{b[0]} - {b[1]}", f"{b[1]} - {b[2]}", f"{b[2]} - {b[3]}", f"{b[3]} - {b[4]}", f"{b[4]} - {b[5]}",
+                f">= {b[5]}"]
+    t2_names = [f"< {b[0]} (Calm)"] + tbl_cols
+    return bins, tbl_cols, t2_names
+
 
 # ── Theme definitions ──────────────────────────────────────────────────────────
 # RULE: UI colors can be CSS (rgba/hex). Matplotlib m_ keys MUST be HEX only.
 TH = {
     "dark": {
         # UI palette
-        "bg":       "#030810",
+        "bg": "#030810",
         "card_css": "rgba(5,14,28,0.93)",
-        "brd_css":  "rgba(0,200,255,0.18)",
+        "brd_css": "rgba(0,200,255,0.18)",
         "brd2_css": "rgba(255,255,255,0.07)",
-        "acc":  "#00d8ff", "acc2": "#005f9e",
-        "gold": "#f5a623", "suc":  "#00e5a0", "dng": "#ff4d6d",
-        "txt":  "#ddeeff", "mut":  "#5a7a9a",
-        "ibg":  "#0d1e35", "itxt": "#ddeeff",   # solid input bg/text
-        "pbg":  "#0d1e35", "ptxt": "#ddeeff",   # popup bg/text
+        "acc": "#00d8ff", "acc2": "#005f9e",
+        "gold": "#f5a623", "suc": "#00e5a0", "dng": "#ff4d6d",
+        "txt": "#ddeeff", "mut": "#5a7a9a",
+        "ibg": "#0d1e35", "itxt": "#ddeeff",  # solid input bg/text
+        "pbg": "#0d1e35", "ptxt": "#ddeeff",  # popup bg/text
         "psel": "#0a2a44", "phov": "#0f2840",
-        "ebg":  "#08142a", "etxt": "#ddeeff",   # expander bg/text
-        "shd":  "0 8px 40px rgba(0,0,0,0.60)",
+        "ebg": "#08142a", "etxt": "#ddeeff",  # expander bg/text
+        "shd": "0 8px 40px rgba(0,0,0,0.60)",
         "blur": "blur(18px)",
         # Matplotlib HEX only
-        "m_bg":    "#030810", "m_card":  "#07101e",
-        "m_grid":  "#0f1d30", "m_tick":  "#8aaccc", "m_title": "#00d8ff",
-        "m_poly":  "#00d8ff", "m_pfill": "#003850",
+        "m_bg": "#030810", "m_card": "#07101e",
+        "m_grid": "#0f1d30", "m_tick": "#8aaccc", "m_title": "#00d8ff",
+        "m_poly": "#00d8ff", "m_pfill": "#003850",
     },
     "light": {
-        "bg":       "#e4eeff",
+        "bg": "#e4eeff",
         "card_css": "rgba(255,255,255,0.96)",
-        "brd_css":  "rgba(0,70,180,0.20)",
+        "brd_css": "rgba(0,70,180,0.20)",
         "brd2_css": "rgba(0,0,0,0.08)",
-        "acc":  "#004db3", "acc2": "#002d80",
-        "gold": "#b06800", "suc":  "#005533", "dng": "#bb1122",
-        "txt":  "#07192e", "mut":  "#3a5880",
-        "ibg":  "#ffffff", "itxt": "#07192e",
-        "pbg":  "#ffffff", "ptxt": "#07192e",
+        "acc": "#004db3", "acc2": "#002d80",
+        "gold": "#b06800", "suc": "#005533", "dng": "#bb1122",
+        "txt": "#07192e", "mut": "#3a5880",
+        "ibg": "#ffffff", "itxt": "#07192e",
+        "pbg": "#ffffff", "ptxt": "#07192e",
         "psel": "#deeaff", "phov": "#eef3ff",
-        "ebg":  "#f0f5ff", "etxt": "#07192e",
-        "shd":  "0 4px 22px rgba(0,50,160,0.14)",
+        "ebg": "#f0f5ff", "etxt": "#07192e",
+        "shd": "0 4px 22px rgba(0,50,160,0.14)",
         "blur": "blur(10px)",
-        "m_bg":    "#f8f8ff", "m_card":  "#ffffff",
-        "m_grid":  "#ccd4ee", "m_tick":  "#0d2244", "m_title": "#004db3",
-        "m_poly":  "#004db3", "m_pfill": "#ccddf8",
+        "m_bg": "#f8f8ff", "m_card": "#ffffff",
+        "m_grid": "#ccd4ee", "m_tick": "#0d2244", "m_title": "#004db3",
+        "m_poly": "#004db3", "m_pfill": "#ccddf8",
     },
 }
 
@@ -117,29 +131,35 @@ _SS = dict(theme="dark", diagrams={}, freq=None, rwy1=None, rwy2=None,
            _file_bytes=None, _file_name=None, _cols=None,
            _file_rows=0, _file_loaded=False,
            _pdf_name="", _pdf_roll="", _pdf_site="", _pdf_logo=None,
-           _processing=False)
+           _processing=False, _tbl_cols=[], _t2_names=[], _unit="km/h")
 for k, v in _SS.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  CSS  — fully theme-reactive, no expander hacks
 # ══════════════════════════════════════════════════════════════════════
 def inject_css():
-    T  = TH[st.session_state.theme]
+    T = TH[st.session_state.theme]
     dk = st.session_state.theme == "dark"
-    g  = f"linear-gradient(135deg,{T['acc']},{T['acc2']})"
-    BG = T["bg"]; TXT = T["txt"]; MUT = T["mut"]
-    IBG = T["ibg"]; ITXT = T["itxt"]
-    EBG = T["ebg"]; ETXT = T["etxt"]
-    PBG = T["pbg"]; PTXT = T["ptxt"]
+    g = f"linear-gradient(135deg,{T['acc']},{T['acc2']})"
+    BG = T["bg"];
+    TXT = T["txt"];
+    MUT = T["mut"]
+    IBG = T["ibg"];
+    ITXT = T["itxt"]
+    EBG = T["ebg"];
+    ETXT = T["etxt"]
+    PBG = T["pbg"];
+    PTXT = T["ptxt"]
 
     bg_layers = (
         "radial-gradient(ellipse 70% 38% at 50% 100%,"
         f"{'rgba(255,150,30,.07)' if dk else 'rgba(0,80,200,.06)'} 0%,transparent 55%),"
         f"{'linear-gradient(180deg,#020509,#030810 30%,#040b18 70%,#020509)' if dk else 'linear-gradient(180deg,#dce8ff,#e4eeff 50%,#d8e4ff)'}"
     )
-    overlay    = "rgba(2,6,16,0.68)" if dk else "rgba(215,228,255,0.56)"
+    overlay = "rgba(2,6,16,0.68)" if dk else "rgba(215,228,255,0.56)"
     rwy_stripe = "rgba(255,255,255,0.038)" if dk else "rgba(0,50,180,0.034)"
 
     st.markdown(f"""<style>
@@ -422,7 +442,7 @@ div[data-testid="stAlert"] p{{
   border:1px solid var(--brd);border-radius:20px;
   padding:2.5rem 2.4rem 2.2rem;margin-bottom:1.4rem;
   background:{'linear-gradient(150deg,rgba(3,10,25,0.97),rgba(5,16,36,0.97))' if dk
-              else 'linear-gradient(150deg,rgba(216,230,255,0.97),rgba(228,240,255,0.97))'};
+    else 'linear-gradient(150deg,rgba(216,230,255,0.97),rgba(228,240,255,0.97))'};
   backdrop-filter:var(--blur);box-shadow:var(--shd);
 }}
 .ar-hero::after{{
@@ -599,6 +619,7 @@ div[data-testid="stAlert"] p{{
 .ar-freq-box{{
   background:{EBG};border:1px solid {T['brd_css']};
   border-radius:var(--rad);padding:1rem 1.2rem;margin:.5rem 0;
+  overflow-x: auto;
 }}
 .ar-freq-hdr{{
   font-family:'Bebas Neue',cursive;font-size:1.15rem;letter-spacing:.12em;
@@ -621,6 +642,13 @@ div[data-testid="stAlert"] p{{
   padding:7px 10px;letter-spacing:.05em;font-size:.7rem;
   text-align:center;font-weight:700;
   border-bottom:2px solid {'rgba(0,200,255,0.3)' if dk else 'rgba(0,80,200,0.3)'};
+  white-space: nowrap; 
+}}
+.ar-tbl th.wrap-header {{
+  white-space: normal !important;
+  line-height: 1.4;
+  min-width: 130px;
+  vertical-align: middle;
 }}
 .ar-tbl th.dh{{
   background:{'#061828' if dk else '#0d2244'}!important;
@@ -633,6 +661,7 @@ div[data-testid="stAlert"] p{{
   text-align:center;
   color:{ETXT}!important;-webkit-text-fill-color:{ETXT}!important;
   font-size:.73rem;
+  white-space: nowrap; 
 }}
 .ar-tbl td.dc{{
   font-weight:700;text-align:left;
@@ -766,7 +795,7 @@ div[data-testid="stAlert"] p{{
 .rwy-fill{{position:absolute;top:0;left:0;bottom:0;
   transition:width .3s cubic-bezier(.4,0,.2,1);
   background:{'linear-gradient(90deg,rgba(0,200,255,0.07),rgba(0,200,255,0.20))' if dk
-              else 'linear-gradient(90deg,rgba(0,60,200,0.08),rgba(0,60,200,0.22))'};
+    else 'linear-gradient(90deg,rgba(0,60,200,0.08),rgba(0,60,200,0.22))'};
   border-right:2px solid {'rgba(0,200,255,0.60)' if dk else 'rgba(0,60,200,0.55)'};}}
 .rwy-plane{{position:absolute;top:50%;transform:translateY(-50%);font-size:22px;
   filter:{'drop-shadow(0 0 6px rgba(0,220,255,0.85))' if dk else 'drop-shadow(0 0 4px rgba(0,60,200,0.55))'};
@@ -795,37 +824,47 @@ div[data-testid="stAlert"] p{{
 
 </style>""", unsafe_allow_html=True)
 
+
 # ══════════════════════════════════════════════════════════════════════
 #  COMPASS SVG
 # ══════════════════════════════════════════════════════════════════════
 def compass_svg(accent, size=145):
-    c=size/2; r=c*0.9; ticks=""
+    c = size / 2;
+    r = c * 0.9;
+    ticks = ""
     for i in range(16):
-        a=np.radians(i*22.5); r1=r*0.76; r2=r*0.90
-        x1=c+r1*np.sin(a); y1=c-r1*np.cos(a)
-        x2=c+r2*np.sin(a); y2=c-r2*np.cos(a)
-        w="1.2" if i%4==0 else "0.55"
-        ticks+=(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"'
-                f' stroke="{accent}" stroke-width="{w}" opacity="0.65"/>')
+        a = np.radians(i * 22.5);
+        r1 = r * 0.76;
+        r2 = r * 0.90
+        x1 = c + r1 * np.sin(a);
+        y1 = c - r1 * np.cos(a)
+        x2 = c + r2 * np.sin(a);
+        y2 = c - r2 * np.cos(a)
+        w = "1.2" if i % 4 == 0 else "0.55"
+        ticks += (f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"'
+                  f' stroke="{accent}" stroke-width="{w}" opacity="0.65"/>')
     return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}"'
             f' xmlns="http://www.w3.org/2000/svg" class="ar-compass">'
-            f'<circle cx="{c}" cy="{c}" r="{r*0.93:.1f}" fill="none"'
+            f'<circle cx="{c}" cy="{c}" r="{r * 0.93:.1f}" fill="none"'
             f' stroke="{accent}" stroke-width="0.8" opacity="0.38"/>'
-            f'<circle cx="{c}" cy="{c}" r="{r*0.76:.1f}" fill="none"'
+            f'<circle cx="{c}" cy="{c}" r="{r * 0.76:.1f}" fill="none"'
             f' stroke="{accent}" stroke-width="0.5" opacity="0.22"/>'
             f'{ticks}'
-            f'<polygon points="{c},{c-r*0.62:.1f} {c-5.5},{c:.1f}'
-            f' {c},{c+r*0.17:.1f} {c+5.5},{c:.1f}" fill="{accent}" opacity="0.95"/>'
-            f'<polygon points="{c},{c+r*0.62:.1f} {c-5.5},{c:.1f}'
-            f' {c},{c-r*0.17:.1f} {c+5.5},{c:.1f}" fill="{accent}" opacity="0.38"/>'
+            f'<polygon points="{c},{c - r * 0.62:.1f} {c - 5.5},{c:.1f}'
+            f' {c},{c + r * 0.17:.1f} {c + 5.5},{c:.1f}" fill="{accent}" opacity="0.95"/>'
+            f'<polygon points="{c},{c + r * 0.62:.1f} {c - 5.5},{c:.1f}'
+            f' {c},{c - r * 0.17:.1f} {c + 5.5},{c:.1f}" fill="{accent}" opacity="0.38"/>'
             f'<circle cx="{c}" cy="{c}" r="3.8" fill="{accent}" opacity="0.85"/>'
             f'<circle cx="{c}" cy="{c}" r="1.8" fill="white" opacity="0.55"/></svg>')
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  RUNWAY PROGRESS BAR
 # ══════════════════════════════════════════════════════════════════════
 def rwy_progress(pct, msg=""):
-    pct=max(0.,min(100.,pct)); left=2+pct*0.91; tilt=min(pct*0.10,9)
+    pct = max(0., min(100., pct));
+    left = 2 + pct * 0.91;
+    tilt = min(pct * 0.10, 9)
     return (f'<div class="rwy-wrap">'
             f'<div class="rwy-hdr"><span>&#9658; {msg}</span>'
             f'<span class="rwy-pct">{pct:.0f}%</span></div>'
@@ -838,306 +877,376 @@ def rwy_progress(pct, msg=""):
             f'<span class="rwy-mark">MID</span><span class="rwy-mark">75%</span>'
             f'<span class="rwy-mark">TKOF</span></div></div>')
 
+
 # ══════════════════════════════════════════════════════════════════════
 #  DATA PROCESSING
 # ══════════════════════════════════════════════════════════════════════
 def load_file(f):
-    name=f.name.lower(); raw=f.read(); f.seek(0)
-    if name.endswith((".xlsx",".xls")):
-        try: return pd.read_excel(io.BytesIO(raw),engine="openpyxl"), None
-        except Exception as e: return None, str(e)
-    for enc in ("utf-8","utf-8-sig","latin-1","cp1252"):
-        try: return pd.read_csv(io.BytesIO(raw),encoding=enc,low_memory=False), None
-        except Exception: pass
+    name = f.name.lower();
+    raw = f.read();
+    f.seek(0)
+    if name.endswith((".xlsx", ".xls")):
+        try:
+            return pd.read_excel(io.BytesIO(raw), engine="openpyxl"), None
+        except Exception as e:
+            return None, str(e)
+    for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+        try:
+            return pd.read_csv(io.BytesIO(raw), encoding=enc, low_memory=False), None
+        except Exception:
+            pass
     return None, "Cannot decode file."
+
 
 @st.cache_data(show_spinner=False)
 def process_data(fb, fname, dc, sc, dfmt, su):
-    name=fname.lower()
-    if name.endswith((".xlsx",".xls")): df=pd.read_excel(io.BytesIO(fb),engine="openpyxl")
+    name = fname.lower()
+    if name.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(io.BytesIO(fb), engine="openpyxl")
     else:
-        df=None
-        for enc in ("utf-8","utf-8-sig","latin-1","cp1252"):
-            try: df=pd.read_csv(io.BytesIO(fb),encoding=enc,low_memory=False); break
-            except Exception: pass
+        df = None
+        for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                df = pd.read_csv(io.BytesIO(fb), encoding=enc, low_memory=False); break
+            except Exception:
+                pass
         if df is None: raise ValueError("Cannot decode file.")
-    df.columns=df.columns.str.strip()
-    for col in (dc,sc):
+    df.columns = df.columns.str.strip()
+    for col in (dc, sc):
         if col not in df.columns:
             raise ValueError(f"Column '{col}' not found. Available: {list(df.columns)}")
-    w=df[[dc,sc]].copy(); w.columns=["dir","spd"]
-    if dfmt=="Compass (N, NNE …)":
-        w["dg"]=w["dir"].astype(str).str.strip().str.upper().map(C2D)
+    w = df[[dc, sc]].copy();
+    w.columns = ["dir", "spd"]
+    if dfmt == "Compass (N, NNE …)":
+        w["dg"] = w["dir"].astype(str).str.strip().str.upper().map(C2D)
     else:
-        w["dg"]=pd.to_numeric(w["dir"],errors="coerce")%360
-    w["kmh"]=pd.to_numeric(w["spd"],errors="coerce")
-    if su=="knots": w["kmh"]*=1.852
-    elif su=="m/s":  w["kmh"]*=3.6
-    w=w.dropna(subset=["dg","kmh"])
-    if len(w)==0: raise ValueError("No valid rows after processing.")
-    w["sec"]=(((w["dg"]+11.25)%360)//22.5).astype(int).clip(0,15)
-    w["sc"]=pd.cut(w["kmh"],bins=SPD_BINS,labels=list(range(5))).astype(float).astype("Int64")
-    total=len(w); freq=np.zeros((16,5))
+        w["dg"] = pd.to_numeric(w["dir"], errors="coerce") % 360
+
+    w["speed_val"] = pd.to_numeric(w["spd"], errors="coerce")
+    w = w.dropna(subset=["dg", "speed_val"])
+    if len(w) == 0: raise ValueError("No valid rows after processing.")
+
+    bins, tbl_cols, t2_names = get_unit_config(su)
+
+    w["sec"] = (((w["dg"] + 11.25) % 360) // 22.5).astype(int).clip(0, 15)
+    w["sc"] = pd.cut(w["speed_val"], bins=bins, labels=list(range(7))).astype(float).astype("Int64")
+    total = len(w);
+    freq = np.zeros((16, 7))
     for s in range(16):
-        for c in range(5):
-            freq[s,c]=((w.sec==s)&(w.sc==c)).sum()/total*100
-    op=freq[:,1]+freq[:,2]+freq[:,3]
-    return freq,{"total":total,"calm":round(freq[:,0].sum(),1),
-                 "op":round(op.sum(),1),"avg":round(w.kmh.mean(),1),
-                 "max":round(w.kmh.max(),1),"dom":DIRS_16[int(op.argmax())]}
+        for c in range(7):
+            freq[s, c] = ((w.sec == s) & (w.sc == c)).sum() / total * 100
+
+    op = freq[:, 1:].sum(axis=1)
+    return freq, {"total": total, "calm": round(freq[:, 0].sum(), 1),
+                  "op": round(op.sum(), 1), "avg": round(w.speed_val.mean(), 1),
+                  "max": round(w.speed_val.max(), 1), "dom": DIRS_16[int(op.argmax())]}, tbl_cols, t2_names
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  RUNWAY ANALYSIS
 # ══════════════════════════════════════════════════════════════════════
-def ha(cx): return np.degrees(np.arcsin(min(cx/24.1,1.)))
-def rwy_cov(freq,hdg,cx):
-    h=ha(cx); t=0.
+def ha(cx): return np.degrees(np.arcsin(min(cx / 24.1, 1.)))
+
+
+def rwy_cov(freq, hdg, cx):
+    h = ha(cx);
+    t = 0.
     for i in range(16):
-        d=abs(((i*22.5-hdg+180)%360)-180)
-        if d<=h or d>=180-h: t+=freq[i,1:4].sum()
-    return min(t,100.)
-def best_rwy(freq,cx,excl=None):
-    bh,bc=0.,0.
-    for hdg in np.arange(0,180,5):
-        if excl is not None and abs(((hdg-excl+90)%180)-90)<20: continue
-        c=rwy_cov(freq,hdg,cx)
-        if c>bc: bc,bh=c,hdg
+        d = abs(((i * 22.5 - hdg + 180) % 360) - 180)
+        if d <= h or d >= 180 - h: t += freq[i, 1:].sum()
+    return min(t, 100.)
+
+
+def best_rwy(freq, cx, excl=None):
+    bh, bc = 0., 0.
+    for hdg in np.arange(0, 180, 5):
+        if excl is not None and abs(((hdg - excl + 90) % 180) - 90) < 20: continue
+        c = rwy_cov(freq, hdg, cx)
+        if c > bc: bc, bh = c, hdg
     return float(bh)
-def comb_cov(freq,r1,r2,cx):
-    h=ha(cx); t=0.
+
+
+def comb_cov(freq, r1, r2, cx):
+    h = ha(cx);
+    t = 0.
     for i in range(16):
-        a=i*22.5; d1=abs(((a-r1+180)%360)-180); d2=abs(((a-r2+180)%360)-180)
-        if d1<=h or d1>=180-h or d2<=h or d2>=180-h: t+=freq[i,1:4].sum()
-    return min(t,100.)
+        a = i * 22.5;
+        d1 = abs(((a - r1 + 180) % 360) - 180);
+        d2 = abs(((a - r2 + 180) % 360) - 180)
+        if d1 <= h or d1 >= 180 - h or d2 <= h or d2 >= 180 - h: t += freq[i, 1:].sum()
+    return min(t, 100.)
+
+
 def rwy_lbl(hdg):
-    e1=int(round(hdg/10))%36 or 36; e2=int(round((hdg+180)/10))%36 or 36
+    e1 = int(round(hdg / 10)) % 36 or 36;
+    e2 = int(round((hdg + 180) / 10)) % 36 or 36
     return f"Runway {e1:02d}/{e2:02d}"
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  FREQUENCY TABLE HTML  — standalone div, no expander
 # ══════════════════════════════════════════════════════════════════════
-def freq_table_html(freq, T):
-    note = (f'Calm (&lt;6 km/h) = {freq[:,0].sum():.1f}%  ·  '
-            f'Strong (&gt;60 km/h) = {freq[:,4].sum():.1f}%  ·  '
-            f'Operational (6–60 km/h) = {sum(freq[:,j].sum() for j in TBL_IDX):.1f}%')
+def freq_table_html(freq, T, tbl_cols, unit):
+    note = (f'Calm (&lt;{tbl_cols[0].split(" - ")[0]} {unit}) = {freq[:, 0].sum():.1f}%  ·  '
+            f'Strong (&gt;{tbl_cols[-1].split("= ")[-1]} {unit}) = {freq[:, 6].sum():.1f}%  ·  '
+            f'Operational = {freq[:, 1:].sum():.1f}%')
     hdr = (f'<tr><th class="dh" rowspan="2">Direction</th>'
-           f'<th colspan="3">Duration of Wind (%)</th>'
-           f'<th rowspan="2">Total % of time wind blew<br>between 6.0 to 60 km/h</th></tr>'
+           f'<th colspan="6">Duration of Wind (%)</th>'
+           f'<th rowspan="2" class="wrap-header">Total % of time wind blew<br>in Operational<br>Range</th></tr>'
            f'<tr>'
-           f'<th>{TBL_COLS[0]}</th>'
-           f'<th>{TBL_COLS[1]}</th>'
-           f'<th>{TBL_COLS[2]}</th>'
+           f'<th>{tbl_cols[0]}</th><th>{tbl_cols[1]}</th><th>{tbl_cols[2]}</th>'
+           f'<th>{tbl_cols[3]}</th><th>{tbl_cols[4]}</th><th>{tbl_cols[5]}</th>'
            f'</tr>')
-    rows=""
-    for i,d in enumerate(DIRS_16):
-        c1=freq[i,1]; c2=freq[i,2]; c3=freq[i,3]; tot=c1+c2+c3
-        rows+=(f'<tr><td class="dc">{d}</td>'
-               f'<td>{c1:.1f}</td><td>{c2:.1f}</td><td>{c3:.1f}</td>'
-               f'<td>{tot:.1f}</td></tr>')
-    t1=freq[:,1].sum(); t2=freq[:,2].sum(); t3=freq[:,3].sum(); tt=t1+t2+t3
-    rows+=(f'<tr class="trow"><td class="dc">TOTAL</td>'
-           f'<td>{t1:.1f}</td><td>{t2:.1f}</td><td>{t3:.1f}</td>'
-           f'<td>{tt:.1f}</td></tr>')
+    rows = ""
+    for i, d in enumerate(DIRS_16):
+        cols_html = "".join([f"<td>{freq[i, j]:.1f}</td>" for j in range(1, 7)])
+        tot = freq[i, 1:].sum()
+        rows += (f'<tr><td class="dc">{d}</td>{cols_html}<td>{tot:.1f}</td></tr>')
+
+    t_html = "".join([f"<td>{freq[:, j].sum():.1f}</td>" for j in range(1, 7)])
+    tt = freq[:, 1:].sum()
+    rows += (f'<tr class="trow"><td class="dc">TOTAL</td>{t_html}<td>{tt:.1f}</td></tr>')
     return (f'<div class="ar-freq-box">'
-            f'<div class="ar-freq-hdr">Frequency Table</div>'
+            f'<div class="ar-freq-hdr">Frequency Table ({unit})</div>'
             f'<div class="ar-freq-note">{note}</div>'
             f'<table class="ar-tbl">{hdr}{rows}</table>'
             f'</div>')
 
-def freq_to_csv(freq):
-    rows=[]
-    for i,d in enumerate(DIRS_16):
-        r={"Direction":d}
-        for j,lbl in enumerate(TBL_COLS): r[lbl]=round(freq[i,TBL_IDX[j]],4)
-        r["Total % (6.0-60 km/h)"]=round(sum(freq[i,j] for j in TBL_IDX),4)
+
+def freq_to_csv(freq, tbl_cols):
+    rows = []
+    for i, d in enumerate(DIRS_16):
+        r = {"Direction": d}
+        for j, lbl in enumerate(tbl_cols): r[lbl] = round(freq[i, j + 1], 4)
+        r["Total % (Operational)"] = round(freq[i, 1:].sum(), 4)
         rows.append(r)
-    t={"Direction":"TOTAL"}
-    for j,lbl in enumerate(TBL_COLS): t[lbl]=round(freq[:,TBL_IDX[j]].sum(),4)
-    t["Total % (6.0-60 km/h)"]=round(sum(freq[:,j].sum() for j in TBL_IDX),4)
+    t = {"Direction": "TOTAL"}
+    for j, lbl in enumerate(tbl_cols): t[lbl] = round(freq[:, j + 1].sum(), 4)
+    t["Total % (Operational)"] = round(freq[:, 1:].sum(), 4)
     rows.append(t)
     return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  DIAGRAM RENDERERS  — white bg, HEX only, NO runway lines
 # ══════════════════════════════════════════════════════════════════════
 def _polar(title, theme):
-    T=TH[theme]
-    fig,ax=plt.subplots(figsize=(7.5,7.5),subplot_kw=dict(polar=True),facecolor="#ffffff")
-    ax.set_facecolor("#f8faff"); ax.set_theta_zero_location("N"); ax.set_theta_direction(-1)
-    ax.grid(color="#dde4f0",linestyle="--",lw=0.55,alpha=0.8)
+    T = TH[theme]
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), subplot_kw=dict(polar=True), facecolor="#ffffff")
+    ax.set_facecolor("#f8faff");
+    ax.set_theta_zero_location("N");
+    ax.set_theta_direction(-1)
+    ax.grid(color="#dde4f0", linestyle="--", lw=0.55, alpha=0.8)
     ax.spines["polar"].set_color("#dde4f0")
-    ax.set_xticks(np.linspace(0,2*np.pi,16,endpoint=False))
-    ax.set_xticklabels(DIRS_16,fontsize=9,fontweight="bold",color="#0d2244",fontfamily="monospace")
-    ax.tick_params(axis="y",labelsize=7.5,labelcolor="#3d5a80")
-    ax.set_title(title,fontsize=10.5,fontweight="bold",pad=26,color=T["m_title"],wrap=True)
-    return fig,ax
+    ax.set_xticks(np.linspace(0, 2 * np.pi, 16, endpoint=False))
+    ax.set_xticklabels(DIRS_16, fontsize=9, fontweight="bold", color="#0d2244", fontfamily="monospace")
+    ax.tick_params(axis="y", labelsize=7.5, labelcolor="#3d5a80")
+    ax.set_title(title, fontsize=10.5, fontweight="bold", pad=26, color=T["m_title"], wrap=True)
+    return fig, ax
+
 
 def _leg(ax, handles):
-    ax.legend(handles=handles,loc="lower left",bbox_to_anchor=(-0.22,-0.28),
-              fontsize=8,framealpha=0.97,facecolor="#ffffff",
-              edgecolor="#ccd4ee",labelcolor="#0d2244")
+    ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(-0.22, -0.28),
+              fontsize=8, framealpha=0.97, facecolor="#ffffff",
+              edgecolor="#ccd4ee", labelcolor="#0d2244")
+
 
 def _png(fig):
-    buf=io.BytesIO()
-    fig.savefig(buf,format="png",dpi=160,bbox_inches="tight",facecolor="#ffffff")
-    plt.close(fig); buf.seek(0); return buf.getvalue()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=160, bbox_inches="tight", facecolor="#ffffff")
+    plt.close(fig);
+    buf.seek(0);
+    return buf.getvalue()
+
 
 def _refcircles(ax, mv):
-    for frac in [.25,.5,.75,1.]:
-        rv=mv*frac
-        ax.plot(np.linspace(0,2*np.pi,200),[rv]*200,color="#ccd4ee",lw=0.6,alpha=0.7,zorder=1)
-        ax.text(np.radians(10),rv,f"{rv:.1f}%",fontsize=6,color="#6688aa",ha="left",va="bottom")
+    for frac in [.25, .5, .75, 1.]:
+        rv = mv * frac
+        ax.plot(np.linspace(0, 2 * np.pi, 200), [rv] * 200, color="#ccd4ee", lw=0.6, alpha=0.7, zorder=1)
+        ax.text(np.radians(10), rv, f"{rv:.1f}%", fontsize=6, color="#6688aa", ha="left", va="bottom")
 
-# Type I — polygon, uses 6-60 km/h total per direction
-def render_t1s(freq, theme):
-    T=TH[theme]; dp=freq[:,1]+freq[:,2]+freq[:,3]; N=16
-    th=np.linspace(0,2*np.pi,N,endpoint=False); mv=max(dp.max(),1.)
-    fig,ax=_polar("TYPE I  —  SINGLE RUNWAY\n",theme)
-    _refcircles(ax,mv)
-    ax.fill(th,dp,color=T["m_pfill"],alpha=0.35,zorder=2)
-    ax.plot(np.append(th,th[0]),np.append(dp,dp[0]),color=T["m_poly"],lw=2.4,alpha=0.95,zorder=3)
-    sz=[100 if dp[i]>=mv*.90 else 60 if dp[i]>=mv*.60 else 30 for i in range(N)]
-    ax.scatter(th,dp,s=sz,color=T["m_poly"],zorder=4,edgecolors="#ffffff",linewidths=0.9)
-    dom=int(np.argmax(dp))
-    ax.text(th[dom],dp[dom]*1.16,f"{dp[dom]:.1f}%",fontsize=8.5,color=T["m_poly"],
-            ha="center",va="bottom",fontweight="bold")
-    ax.set_ylim(0,mv*1.30)
-    _leg(ax,[
-        mpatches.Patch(color=T["m_pfill"],alpha=0.5,label="Wind Rose Diagram"),
-        plt.Line2D([0],[0],color=T["m_poly"],lw=2.4,label="Polygon outline"),
-        plt.Line2D([0],[0],marker='o',color=T["m_poly"],lw=0,markersize=5.5,label="Direction value"),
+
+def render_t1s(freq, theme, unit):
+    T = TH[theme];
+    dp = freq[:, 1:].sum(axis=1);
+    N = 16
+    th = np.linspace(0, 2 * np.pi, N, endpoint=False);
+    mv = max(dp.max(), 1.)
+    fig, ax = _polar(f"TYPE I  —  SINGLE RUNWAY\n({unit})", theme)
+    _refcircles(ax, mv)
+    ax.fill(th, dp, color=T["m_pfill"], alpha=0.35, zorder=2)
+    ax.plot(np.append(th, th[0]), np.append(dp, dp[0]), color=T["m_poly"], lw=2.4, alpha=0.95, zorder=3)
+    sz = [100 if dp[i] >= mv * .90 else 60 if dp[i] >= mv * .60 else 30 for i in range(N)]
+    ax.scatter(th, dp, s=sz, color=T["m_poly"], zorder=4, edgecolors="#ffffff", linewidths=0.9)
+    dom = int(np.argmax(dp))
+    ax.text(th[dom], dp[dom] * 1.16, f"{dp[dom]:.1f}%", fontsize=8.5, color=T["m_poly"],
+            ha="center", va="bottom", fontweight="bold")
+    ax.set_ylim(0, mv * 1.30)
+    _leg(ax, [
+        mpatches.Patch(color=T["m_pfill"], alpha=0.5, label="Wind Rose Diagram"),
+        plt.Line2D([0], [0], color=T["m_poly"], lw=2.4, label="Polygon outline"),
+        plt.Line2D([0], [0], marker='o', color=T["m_poly"], lw=0, markersize=5.5, label="Direction value"),
     ])
-    plt.tight_layout(rect=[0,.07,1,.97]); return _png(fig)
+    plt.tight_layout(rect=[0, .07, 1, .97]);
+    return _png(fig)
 
-def render_t1m(freq, theme):
-    T=TH[theme]; dp=freq[:,1]+freq[:,2]+freq[:,3]; N=16
-    th=np.linspace(0,2*np.pi,N,endpoint=False); mv=max(dp.max(),1.)
-    fig,ax=_polar("TYPE I  —  MULTI RUNWAY\n",theme)
-    _refcircles(ax,mv)
-    ax.fill(th,dp,color=T["m_pfill"],alpha=0.32,zorder=2)
-    ax.plot(np.append(th,th[0]),np.append(dp,dp[0]),color=T["m_poly"],lw=2.4,alpha=0.92,zorder=3)
-    ax.scatter(th,dp,s=32,color=T["m_poly"],zorder=4,edgecolors="#ffffff",linewidths=0.8)
-    dom=int(np.argmax(dp))
-    ax.text(th[dom],dp[dom]*1.16,f"{dp[dom]:.1f}%",fontsize=8,color=T["m_poly"],
-            ha="center",va="bottom",fontweight="bold")
-    ax.set_ylim(0,mv*1.32)
-    _leg(ax,[
-        mpatches.Patch(color=T["m_pfill"],alpha=0.5,label="Wind Rose Diagram"),
-        plt.Line2D([0],[0],color=T["m_poly"],lw=2.4,label="Polygon outline"),
-        plt.Line2D([0],[0],marker='o',color=T["m_poly"],lw=0,markersize=5.5,label="Direction value"),
+
+def render_t1m(freq, theme, unit):
+    T = TH[theme];
+    dp = freq[:, 1:].sum(axis=1);
+    N = 16
+    th = np.linspace(0, 2 * np.pi, N, endpoint=False);
+    mv = max(dp.max(), 1.)
+    fig, ax = _polar(f"TYPE I  —  MULTI RUNWAY\n({unit})", theme)
+    _refcircles(ax, mv)
+    ax.fill(th, dp, color=T["m_pfill"], alpha=0.32, zorder=2)
+    ax.plot(np.append(th, th[0]), np.append(dp, dp[0]), color=T["m_poly"], lw=2.4, alpha=0.92, zorder=3)
+    ax.scatter(th, dp, s=32, color=T["m_poly"], zorder=4, edgecolors="#ffffff", linewidths=0.8)
+    dom = int(np.argmax(dp))
+    ax.text(th[dom], dp[dom] * 1.16, f"{dp[dom]:.1f}%", fontsize=8, color=T["m_poly"],
+            ha="center", va="bottom", fontweight="bold")
+    ax.set_ylim(0, mv * 1.32)
+    _leg(ax, [
+        mpatches.Patch(color=T["m_pfill"], alpha=0.5, label="Wind Rose Diagram"),
+        plt.Line2D([0], [0], color=T["m_poly"], lw=2.4, label="Polygon outline"),
+        plt.Line2D([0], [0], marker='o', color=T["m_poly"], lw=0, markersize=5.5, label="Direction value"),
     ])
-    plt.tight_layout(rect=[0,.07,1,.97]); return _png(fig)
+    plt.tight_layout(rect=[0, .07, 1, .97]);
+    return _png(fig)
 
-# Type II — stacked MULTI-COLOR speed class bars
-def render_t2s(freq, theme):
-    T=TH[theme]; N=16
-    th=np.linspace(0,2*np.pi,N,endpoint=False); w=2*np.pi/N*.80
-    fig,ax=_polar("TYPE II  —  SINGLE RUNWAY\n",theme)
-    bot=np.zeros(N)
-    for s in range(5):
-        ax.bar(th,freq[:,s],width=w,bottom=bot,
-               color=T2_COLORS[s],edgecolor="#ffffff",lw=0.45,alpha=0.93,
-               label=T2_NAMES[s],zorder=3)
-        bot+=freq[:,s]
-    dom=int(bot.argmax())
-    ax.text(th[dom],bot[dom]*1.10,f"{bot[dom]:.1f}%",fontsize=8,
-            color="#0d2244",ha="center",va="bottom",fontweight="bold")
-    ax.set_ylim(0,bot.max()*1.22 or 1)
-    _leg(ax,[mpatches.Patch(color=T2_COLORS[i],label=T2_NAMES[i]) for i in range(5)])
-    plt.tight_layout(rect=[0,.09,1,.97]); return _png(fig)
 
-def render_t2m(freq, theme):
-    T=TH[theme]; N=16
-    th=np.linspace(0,2*np.pi,N,endpoint=False); w=2*np.pi/N*.80
-    fig,ax=_polar("TYPE II  —  MULTI RUNWAY\n" ,theme)
-    bot=np.zeros(N)
-    for s in range(5):
-        ax.bar(th,freq[:,s],width=w,bottom=bot,
-               color=T2_COLORS[s],edgecolor="#ffffff",lw=0.45,alpha=0.93,
-               label=T2_NAMES[s],zorder=3)
-        bot+=freq[:,s]
-    dom=int(bot.argmax())
-    ax.text(th[dom],bot[dom]*1.10,f"{bot[dom]:.1f}%",fontsize=8,
-            color="#0d2244",ha="center",va="bottom",fontweight="bold")
-    ax.set_ylim(0,bot.max()*1.22 or 1)
-    _leg(ax,[mpatches.Patch(color=T2_COLORS[i],label=T2_NAMES[i]) for i in range(5)])
-    plt.tight_layout(rect=[0,.10,1,.97]); return _png(fig)
+def render_t2s(freq, theme, t2_names, unit):
+    T = TH[theme];
+    N = 16
+    th = np.linspace(0, 2 * np.pi, N, endpoint=False);
+    w = 2 * np.pi / N * .80
+    fig, ax = _polar(f"TYPE II  —  SINGLE RUNWAY\n({unit})", theme)
+    bot = np.zeros(N)
+    for s in range(7):
+        ax.bar(th, freq[:, s], width=w, bottom=bot,
+               color=T2_COLORS[s], edgecolor="#ffffff", lw=0.45, alpha=0.93,
+               label=t2_names[s], zorder=3)
+        bot += freq[:, s]
+    dom = int(bot.argmax())
+    ax.text(th[dom], bot[dom] * 1.10, f"{bot[dom]:.1f}%", fontsize=8,
+            color="#0d2244", ha="center", va="bottom", fontweight="bold")
+    ax.set_ylim(0, bot.max() * 1.22 or 1)
+    _leg(ax, [mpatches.Patch(color=T2_COLORS[i], label=t2_names[i]) for i in range(7)])
+    plt.tight_layout(rect=[0, .09, 1, .97]);
+    return _png(fig)
+
+
+def render_t2m(freq, theme, t2_names, unit):
+    T = TH[theme];
+    N = 16
+    th = np.linspace(0, 2 * np.pi, N, endpoint=False);
+    w = 2 * np.pi / N * .80
+    fig, ax = _polar(f"TYPE II  —  MULTI RUNWAY\n({unit})", theme)
+    bot = np.zeros(N)
+    for s in range(7):
+        ax.bar(th, freq[:, s], width=w, bottom=bot,
+               color=T2_COLORS[s], edgecolor="#ffffff", lw=0.45, alpha=0.93,
+               label=t2_names[s], zorder=3)
+        bot += freq[:, s]
+    dom = int(bot.argmax())
+    ax.text(th[dom], bot[dom] * 1.10, f"{bot[dom]:.1f}%", fontsize=8,
+            color="#0d2244", ha="center", va="bottom", fontweight="bold")
+    ax.set_ylim(0, bot.max() * 1.22 or 1)
+    _leg(ax, [mpatches.Patch(color=T2_COLORS[i], label=t2_names[i]) for i in range(7)])
+    plt.tight_layout(rect=[0, .10, 1, .97]);
+    return _png(fig)
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  PDF BUILDER
 # ══════════════════════════════════════════════════════════════════════
 def build_pdf(diagrams, sname, roll, site, logo_b=None):
-    buf=io.BytesIO(); PW,PH=A4; MG=1.8*cm
-    lr=None
+    buf = io.BytesIO();
+    PW, PH = A4;
+    MG = 1.8 * cm
+    lr = None
     if logo_b:
-        try: lr=ImageReader(io.BytesIO(logo_b))
-        except Exception: pass
-    def pg(cvs,doc):
+        try:
+            lr = ImageReader(io.BytesIO(logo_b))
+        except Exception:
+            pass
+
+    def pg(cvs, doc):
         cvs.saveState()
-        cvs.setFont("Times-Bold",9.5); cvs.setFillColor(RC.HexColor("#0d1829"))
-        cvs.drawCentredString(PW/2,PH-1.0*cm,"WIND ROSE DIAGRAM REPORT")
-        cvs.setLineWidth(0.7); cvs.setStrokeColor(RC.HexColor("#0d1829"))
-        cvs.line(MG,PH-1.35*cm,PW-MG,PH-1.35*cm)
+        cvs.setFont("Times-Bold", 9.5);
+        cvs.setFillColor(RC.HexColor("#0d1829"))
+        cvs.drawCentredString(PW / 2, PH - 1.0 * cm, "WIND ROSE DIAGRAM REPORT")
+        cvs.setLineWidth(0.7);
+        cvs.setStrokeColor(RC.HexColor("#0d1829"))
+        cvs.line(MG, PH - 1.35 * cm, PW - MG, PH - 1.35 * cm)
         if lr:
-            ls=1.4*cm
-            try: cvs.drawImage(lr,PW-MG-ls,PH-1.32*cm,width=ls,height=ls,
-                               preserveAspectRatio=True,mask="auto")
-            except Exception: pass
-        cvs.line(MG,1.4*cm,PW-MG,1.4*cm)
-        cvs.setFont("Times-Roman",8.5); cvs.setFillColor(RC.black)
-        parts=[]
+            ls = 1.4 * cm
+            try:
+                cvs.drawImage(lr, PW - MG - ls, PH - 1.32 * cm, width=ls, height=ls,
+                              preserveAspectRatio=True, mask="auto")
+            except Exception:
+                pass
+        cvs.line(MG, 1.4 * cm, PW - MG, 1.4 * cm)
+        cvs.setFont("Times-Roman", 8.5);
+        cvs.setFillColor(RC.black)
+        parts = []
         if sname and sname.strip(): parts.append(sname.strip())
-        if roll  and roll.strip():  parts.append(f"Roll No: {roll.strip()}")
-        if site  and site.strip():  parts.append(f"Site: {site.strip()}")
-        if parts: cvs.drawString(MG,0.85*cm,"  |  ".join(parts))
-        cvs.drawRightString(PW-MG,0.85*cm,f"Page {doc.page}")
+        if roll and roll.strip():  parts.append(f"Roll No: {roll.strip()}")
+        if site and site.strip():  parts.append(f"Site: {site.strip()}")
+        if parts: cvs.drawString(MG, 0.85 * cm, "  |  ".join(parts))
+        cvs.drawRightString(PW - MG, 0.85 * cm, f"Page {doc.page}")
         cvs.restoreState()
-    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=MG,rightMargin=MG,
-                          topMargin=1.9*cm,bottomMargin=1.8*cm)
-    sty_t=ParagraphStyle("t",fontName="Times-Bold",fontSize=15,
-                          textColor=RC.HexColor("#0d1829"),alignment=TA_CENTER,spaceAfter=4)
-    sty_c=ParagraphStyle("c",fontName="Times-Italic",fontSize=9,
-                          textColor=RC.HexColor("#444"),alignment=TA_CENTER,spaceAfter=4)
-    ORD=["t1s","t1m","t2s","t2m"]
-    LBL={"t1s":"Type I – Single Runway  (Polygon)",
-         "t1m":"Type I – Multi Runway  (Polygon)",
-         "t2s":"Type II – Single Runway  (Speed Bars)",
-         "t2m":"Type II – Multi Runway  (Speed Bars)"}
-    story=[]; first=True
+
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=MG, rightMargin=MG,
+                            topMargin=1.9 * cm, bottomMargin=1.8 * cm)
+    sty_t = ParagraphStyle("t", fontName="Times-Bold", fontSize=15,
+                           textColor=RC.HexColor("#0d1829"), alignment=TA_CENTER, spaceAfter=4)
+    sty_c = ParagraphStyle("c", fontName="Times-Italic", fontSize=9,
+                           textColor=RC.HexColor("#444"), alignment=TA_CENTER, spaceAfter=4)
+    ORD = ["t1s", "t1m", "t2s", "t2m"]
+    LBL = {"t1s": "Type I – Single Runway  (Polygon)",
+           "t1m": "Type I – Multi Runway  (Polygon)",
+           "t2s": "Type II – Single Runway  (Speed Bars)",
+           "t2m": "Type II – Multi Runway  (Speed Bars)"}
+    story = [];
+    first = True
     for key in ORD:
         if key not in diagrams: continue
         if not first: story.append(PageBreak())
-        first=False
-        story.append(Paragraph(f"Wind Rose Diagram — {LBL[key]}",sty_t))
-        story.append(HRFlowable(width="100%",thickness=0.8,
-                                color=RC.HexColor("#0d1829"),spaceAfter=10))
-        story.append(Spacer(1,0.4*cm))
-        story.append(RLImage(io.BytesIO(diagrams[key]),width=14.5*cm,height=14.5*cm,kind="proportional"))
-        story.append(Spacer(1,0.25*cm))
-        story.append(Paragraph(f"Figure: {LBL[key]}",sty_c))
-    if not story: story.append(Paragraph("No diagrams selected.",sty_t))
-    doc.build(story,onFirstPage=pg,onLaterPages=pg)
-    buf.seek(0); return buf.getvalue()
+        first = False
+        story.append(Paragraph(f"Wind Rose Diagram — {LBL[key]}", sty_t))
+        story.append(HRFlowable(width="100%", thickness=0.8,
+                                color=RC.HexColor("#0d1829"), spaceAfter=10))
+        story.append(Spacer(1, 0.4 * cm))
+        story.append(RLImage(io.BytesIO(diagrams[key]), width=14.5 * cm, height=14.5 * cm, kind="proportional"))
+        story.append(Spacer(1, 0.25 * cm))
+        story.append(Paragraph(f"Figure: {LBL[key]}", sty_c))
+    if not story: story.append(Paragraph("No diagrams selected.", sty_t))
+    doc.build(story, onFirstPage=pg, onLaterPages=pg)
+    buf.seek(0);
+    return buf.getvalue()
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  HELPERS
 # ══════════════════════════════════════════════════════════════════════
-def sc(v,l):
+def sc(v, l):
     return (f'<div class="ar-stat"><div class="ar-sv">{v}</div>'
             f'<div class="ar-sl">{l}</div></div>')
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  MAIN UI
 # ══════════════════════════════════════════════════════════════════════
 def main():
     inject_css()
-    T  = TH[st.session_state.theme]
+    T = TH[st.session_state.theme]
     dk = st.session_state.theme == "dark"
 
     # ── HERO ─────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="ar-hero">
-      {compass_svg(T['acc'],145)}
+      {compass_svg(T['acc'], 145)}
       <div class="ar-eyebrow">
         <span class="ar-dot"></span>
         RUNWAY ORIENTATION TOOL
@@ -1159,19 +1268,18 @@ def main():
     </div>""", unsafe_allow_html=True)
 
     # ── THEME TOGGLE  — single button ────────────────────────────
-    icon  = "☀️ Light Mode" if dk else "🌑 Dark Mode"
-    togg  = st.columns([2,5])
+    icon = "☀️ Light Mode" if dk else "🌑 Dark Mode"
+    togg = st.columns([2, 5])
     with togg[0]:
         if st.button(icon, key="theme_btn"):
             st.session_state.theme = "light" if dk else "dark"
             st.rerun()
 
-    st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
-
+    st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
 
     # ── DIAGRAM TYPES ─────────────────────────────────────────────
-    st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
-    st.markdown('<div class="ar-lbl">Type I vs Type II</div>',unsafe_allow_html=True)
+    st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ar-lbl">Type I vs Type II</div>', unsafe_allow_html=True)
     st.markdown("""<div class="ar-type-grid">
       <div class="ar-type-card">
         <div class="ar-type-code">I · S</div>
@@ -1191,8 +1299,7 @@ def main():
         <div class="ar-type-code">II · S</div>
         <div class="ar-type-name">Type II — Single Runway</div>
         <span class="ar-type-badge ar-badge-t2">Multi-Color Speed Bars</span>
-        <div class="ar-type-desc">Each direction = <b>stacked bar in 5 distinct colors</b>
-        (&lt;6 grey · 6-25 blue · 25-40 green · 40-60 orange · &gt;60 red).</div>
+        <div class="ar-type-desc">Each direction = <b>stacked bar in 7 distinct colors</b>.</div>
       </div>
       <div class="ar-type-card">
         <div class="ar-type-code">II · M</div>
@@ -1201,22 +1308,22 @@ def main():
         <div class="ar-type-desc">Same color-coded speed bars for two-runway layout.
         Mark runway axes manually — highest stacked bars = dominant directions.</div>
       </div>
-    </div>""",unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
     # ── UPLOAD & CONFIG ───────────────────────────────────────────
-    st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
-    st.markdown('<div class="ar-lbl">Upload &amp; Configure</div>',unsafe_allow_html=True)
-    st.markdown('<div class="ar-card">',unsafe_allow_html=True)
-    st.markdown('<div class="ar-sub">&#9312; Wind Data File</div>',unsafe_allow_html=True)
+    st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ar-lbl">Upload &amp; Configure</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ar-card">', unsafe_allow_html=True)
+    st.markdown('<div class="ar-sub">&#9312; Wind Data File</div>', unsafe_allow_html=True)
 
-    uploaded=st.file_uploader("Upload file",type=["csv","xlsx","xls"],
-                               label_visibility="collapsed",key="wind_file")
+    uploaded = st.file_uploader("Upload file", type=["csv", "xlsx", "xls"],
+                                label_visibility="collapsed", key="wind_file")
     st.markdown('<div class="ar-hint">'
                 'Required: wind_direction + wind_speed columns  ·  '
                 'Speed auto-converted to km/h  ·  '
                 'Day/month/year columns ignored automatically  ·  '
                 '1–20+ years of data supported'
-                '</div>',unsafe_allow_html=True)
+                '</div>', unsafe_allow_html=True)
 
     # File processing — show spinner while loading
     if uploaded is not None:
@@ -1231,72 +1338,94 @@ def main():
             '<div class="ar-load-txt">Loading wind data…</div>'
             '</div>',
             unsafe_allow_html=True)
-        df_tmp,err=load_file(uploaded); uploaded.seek(0)
+        df_tmp, err = load_file(uploaded);
+        uploaded.seek(0)
         load_ph.empty()
         if err or df_tmp is None:
             st.error(f"Cannot read file: {err}")
-            st.session_state._file_loaded=False
+            st.session_state._file_loaded = False
         else:
-            raw=uploaded.read(); uploaded.seek(0)
-            st.session_state._file_bytes  = raw
-            st.session_state._file_name   = uploaded.name
-            st.session_state._cols        = list(df_tmp.columns)
-            st.session_state._file_rows   = len(df_tmp)
+            raw = uploaded.read();
+            uploaded.seek(0)
+            st.session_state._file_bytes = raw
+            st.session_state._file_name = uploaded.name
+            st.session_state._cols = list(df_tmp.columns)
+            st.session_state._file_rows = len(df_tmp)
             st.session_state._file_loaded = True
 
-    fl   = st.session_state._file_loaded
+    fl = st.session_state._file_loaded
     cols = st.session_state._cols or []
-    fn   = st.session_state._file_name or ""
-    fr   = st.session_state._file_rows or 0
+    fn = st.session_state._file_name or ""
+    fr = st.session_state._file_rows or 0
 
     if fl:
         st.markdown(f'<div class="ar-file-banner">&#10003;&nbsp;'
                     f'<b>{fn}</b>&nbsp;&nbsp;·&nbsp;&nbsp;{fr:,} rows&nbsp;&nbsp;'
                     f'·&nbsp;&nbsp;{len(cols)} columns&nbsp;&nbsp;'
                     f'<span style="opacity:.65;">· Config persists across theme changes</span>'
-                    f'</div>',unsafe_allow_html=True)
+                    f'</div>', unsafe_allow_html=True)
 
     if fl and cols:
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown('<div class="ar-sub">&#9313; Column Mapping</div>',unsafe_allow_html=True)
-        def _g(opts,kws):
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="ar-sub">&#9313; Column Mapping</div>', unsafe_allow_html=True)
+
+        def _g(opts, kws):
             for kw in kws:
-                for i,c in enumerate(opts):
+                for i, c in enumerate(opts):
                     if kw in c.lower(): return i
             return 0
-        di=_g(cols,["dir","wd","wind_d"]); si=_g(cols,["spee","ws","wind_s","vel"])
-        if si==di: si=min(di+1,len(cols)-1)
-        m1,m2,m3,m4=st.columns(4)
-        with m1: dir_col =st.selectbox("Direction Column",cols,index=di,key="dcol")
-        with m2: spd_col =st.selectbox("Speed Column",    cols,index=si,key="scol")
-        with m3: dir_fmt =st.selectbox("Direction Format",["Degrees (0–360)","Compass (N, NNE …)"],key="dfmt")
-        with m4: spd_unit=st.selectbox("Input Speed Unit",["km/h","knots","m/s"],key="sunit")
 
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown('<div class="ar-sub">&#9314; Runway Config</div>',unsafe_allow_html=True)
-        rw1,rw2,rw3,rw4=st.columns(4)
+        di = _g(cols, ["dir", "wd", "wind_d"]);
+        si = _g(cols, ["spee", "ws", "wind_s", "vel"])
+        if si == di: si = min(di + 1, len(cols) - 1)
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            dir_col = st.selectbox("Direction Column", cols, index=di, key="dcol")
+        with m2:
+            spd_col = st.selectbox("Speed Column", cols, index=si, key="scol")
+        with m3:
+            dir_fmt = st.selectbox("Direction Format", ["Degrees (0–360)", "Compass (N, NNE …)"], key="dfmt")
+        with m4:
+            spd_unit = st.selectbox("Input Speed Unit", ["km/h", "knots", "m/s"], key="sunit")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="ar-sub">&#9314; Runway Config</div>', unsafe_allow_html=True)
+        rw1, rw2, rw3, rw4 = st.columns(4)
         with rw1:
-            cx_s=st.selectbox("Crosswind Limit",
-                ["10.5 kt (19.4 km/h) — Light","13 kt (24.1 km/h) — Medium",
-                 "20 kt (37.0 km/h) — Heavy"],key="cxs")
-            cxlim=float(cx_s.split("(")[1].split()[0])
-        with rw2: auto=st.checkbox("Auto-detect runways",value=True,key="auto")
-        with rw3: r1_in=st.number_input("Runway 1 heading (°)",0,179,0,5,disabled=auto,key="r1i")
-        with rw4: r2_in=st.number_input("Runway 2 heading (°)",0,179,45,5,disabled=auto,key="r2i")
+            cx_s = st.selectbox("Crosswind Limit",
+                                ["10.5 kt (19.4 km/h) — Light", "13 kt (24.1 km/h) — Medium",
+                                 "20 kt (37.0 km/h) — Heavy"], key="cxs")
+            if spd_unit == "knots":
+                cxlim = float(cx_s.split(" ")[0])
+            elif spd_unit == "km/h":
+                cxlim = float(cx_s.split("(")[1].split()[0])
+            else:
+                cxlim = float(cx_s.split(" ")[0]) * 0.514444
 
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown('<div class="ar-sub">&#9315; Select Diagrams</div>',unsafe_allow_html=True)
-        d1,d2,d3,d4=st.columns(4)
-        with d1: s_t1s=st.checkbox("Type I  — Single",  value=True,key="ct1s")
-        with d2: s_t1m=st.checkbox("Type I  — Multi",   value=True,key="ct1m")
-        with d3: s_t2s=st.checkbox("Type II — Single",  value=True,key="ct2s")
-        with d4: s_t2m=st.checkbox("Type II — Multi",   value=True,key="ct2m")
-        sel={"t1s":s_t1s,"t1m":s_t1m,"t2s":s_t2s,"t2m":s_t2m}
+        with rw2:
+            auto = st.checkbox("Auto-detect runways", value=True, key="auto")
+        with rw3:
+            r1_in = st.number_input("Runway 1 heading (°)", 0, 179, 0, 5, disabled=auto, key="r1i")
+        with rw4:
+            r2_in = st.number_input("Runway 2 heading (°)", 0, 179, 45, 5, disabled=auto, key="r2i")
 
-    st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="ar-sub">&#9315; Select Diagrams</div>', unsafe_allow_html=True)
+        d1, d2, d3, d4 = st.columns(4)
+        with d1:
+            s_t1s = st.checkbox("Type I  — Single", value=True, key="ct1s")
+        with d2:
+            s_t1m = st.checkbox("Type I  — Multi", value=True, key="ct1m")
+        with d3:
+            s_t2s = st.checkbox("Type II — Single", value=True, key="ct2s")
+        with d4:
+            s_t2m = st.checkbox("Type II — Multi", value=True, key="ct2m")
+        sel = {"t1s": s_t1s, "t1m": s_t1m, "t2s": s_t2s, "t2m": s_t2m}
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── STUDENT DETAILS ───────────────────────────────────────────
-    st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
+    st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
     st.markdown('<div class="ar-lbl">Student / Report Details  (Optional)</div>',
                 unsafe_allow_html=True)
     st.markdown(f'<div class="ar-info-card">'
@@ -1306,27 +1435,30 @@ def main():
                 f'<b style="color:{T["acc"]}">PDF footer</b>. '
                 f'Logo (PNG/JPG) appears in the '
                 f'<b style="color:{T["acc"]}">top-right header</b>. All optional.'
-                f'</span></div>',unsafe_allow_html=True)
+                f'</span></div>', unsafe_allow_html=True)
 
-    ui1,ui2,ui3,ui4=st.columns(4)
-    with ui1: stu_name=st.text_input("👤 Student Name",    key="sname")
-    with ui2: stu_roll=st.text_input("🎓 Roll Number",     key="sroll")
-    with ui3: stu_site=st.text_input("📍 Site / Location", key="ssite")
+    ui1, ui2, ui3, ui4 = st.columns(4)
+    with ui1:
+        stu_name = st.text_input("👤 Student Name", key="sname")
+    with ui2:
+        stu_roll = st.text_input("🎓 Roll Number", key="sroll")
+    with ui3:
+        stu_site = st.text_input("📍 Site / Location", key="ssite")
     with ui4:
-        logo_file=st.file_uploader("🖼 Your Logo",
-                                    type=["png","jpg","jpeg"],key="logo_up",
-                                    label_visibility="visible")
+        logo_file = st.file_uploader("🖼 Your Logo",
+                                     type=["png", "jpg", "jpeg"], key="logo_up",
+                                     label_visibility="visible")
 
     # ── GENERATE BUTTON ───────────────────────────────────────────
-    gen_btn=False
+    gen_btn = False
     if fl:
-        st.markdown("<br>",unsafe_allow_html=True)
-        _,gc,_=st.columns([1,3,1])
+        st.markdown("<br>", unsafe_allow_html=True)
+        _, gc, _ = st.columns([1, 3, 1])
         with gc:
-            st.markdown('<div class="gen-wrap">',unsafe_allow_html=True)
-            gen_btn=st.button("&#9889;  GENERATE WIND ROSE DIAGRAMS  &#9889;",
-                              use_container_width=True)
-            st.markdown('</div>',unsafe_allow_html=True)
+            st.markdown('<div class="gen-wrap">', unsafe_allow_html=True)
+            gen_btn = st.button("&#9889;  GENERATE WIND ROSE DIAGRAMS  &#9889;",
+                                use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # ── GENERATE LOGIC ────────────────────────────────────────────
     if gen_btn:
@@ -1340,140 +1472,164 @@ def main():
             st.session_state['_pdf_roll'] = stu_roll or ""
             st.session_state['_pdf_site'] = stu_site or ""
             if logo_file is not None:
-                try: st.session_state['_pdf_logo']=logo_file.read(); logo_file.seek(0)
-                except: st.session_state['_pdf_logo']=None
-            else: st.session_state['_pdf_logo']=None
-
-            ph=st.empty()
-            ph.markdown(rwy_progress(0,"LOADING DATA"),unsafe_allow_html=True)
-            try:
-                freq,stats=process_data(
-                    st.session_state._file_bytes,st.session_state._file_name,
-                    dir_col,spd_col,dir_fmt,spd_unit)
-            except ValueError as e:
-                ph.empty(); st.error(f"Data error: {e}"); st.stop()
-            except Exception as e:
-                ph.empty(); st.error(f"Error: {e}"); st.stop()
-
-            ph.markdown(rwy_progress(15,"ANALYSING WIND DATA"),unsafe_allow_html=True)
-            if auto:
-                r1=best_rwy(freq,cxlim); r2=best_rwy(freq,cxlim,excl=r1)
+                try:
+                    st.session_state['_pdf_logo'] = logo_file.read(); logo_file.seek(0)
+                except:
+                    st.session_state['_pdf_logo'] = None
             else:
-                r1,r2=float(r1_in),float(r2_in)
+                st.session_state['_pdf_logo'] = None
 
-            ph.markdown(rwy_progress(25,"RUNWAY HEADING RESOLVED"),unsafe_allow_html=True)
-            tnow=st.session_state.theme
-            diags={}
-            rmap={"t1s":lambda:render_t1s(freq,tnow),
-                  "t1m":lambda:render_t1m(freq,tnow),
-                  "t2s":lambda:render_t2s(freq,tnow),
-                  "t2m":lambda:render_t2m(freq,tnow)}
-            lmap={"t1s":"TYPE I SINGLE","t1m":"TYPE I MULTI",
-                  "t2s":"TYPE II SINGLE","t2m":"TYPE II MULTI"}
-            ts=sum(sel.values()); done=0
-            for key,fn in rmap.items():
+            ph = st.empty()
+            ph.markdown(rwy_progress(0, "LOADING DATA"), unsafe_allow_html=True)
+            try:
+                freq, stats, tbl_cols, t2_names = process_data(
+                    st.session_state._file_bytes, st.session_state._file_name,
+                    dir_col, spd_col, dir_fmt, spd_unit)
+            except ValueError as e:
+                ph.empty();
+                st.error(f"Data error: {e}");
+                st.stop()
+            except Exception as e:
+                ph.empty();
+                st.error(f"Error: {e}");
+                st.stop()
+
+            ph.markdown(rwy_progress(15, "ANALYSING WIND DATA"), unsafe_allow_html=True)
+            if auto:
+                r1 = best_rwy(freq, cxlim);
+                r2 = best_rwy(freq, cxlim, excl=r1)
+            else:
+                r1, r2 = float(r1_in), float(r2_in)
+
+            ph.markdown(rwy_progress(25, "RUNWAY HEADING RESOLVED"), unsafe_allow_html=True)
+            tnow = st.session_state.theme
+            diags = {}
+            rmap = {"t1s": lambda: render_t1s(freq, tnow, spd_unit),
+                    "t1m": lambda: render_t1m(freq, tnow, spd_unit),
+                    "t2s": lambda: render_t2s(freq, tnow, t2_names, spd_unit),
+                    "t2m": lambda: render_t2m(freq, tnow, t2_names, spd_unit)}
+            lmap = {"t1s": "TYPE I SINGLE", "t1m": "TYPE I MULTI",
+                    "t2s": "TYPE II SINGLE", "t2m": "TYPE II MULTI"}
+            ts = sum(sel.values());
+            done = 0
+            for key, fn in rmap.items():
                 if not sel[key]: continue
-                try: diags[key]=fn()
-                except Exception as e: st.warning(f"Cannot render {key}: {e}")
-                done+=1
-                ph.markdown(rwy_progress(25+done/ts*72,f"RENDERING {lmap[key]}"),
-                             unsafe_allow_html=True)
+                try:
+                    diags[key] = fn()
+                except Exception as e:
+                    st.warning(f"Cannot render {key}: {e}")
+                done += 1
+                ph.markdown(rwy_progress(25 + done / ts * 72, f"RENDERING {lmap[key]}"),
+                            unsafe_allow_html=True)
 
-            ph.markdown(rwy_progress(100,"CLEARED FOR TAKEOFF"),unsafe_allow_html=True)
-            time.sleep(0.5); ph.empty()
+            ph.markdown(rwy_progress(100, "CLEARED FOR TAKEOFF"), unsafe_allow_html=True)
+            time.sleep(0.5);
+            ph.empty()
 
-            st.session_state.diagrams=diags; st.session_state.freq=freq
-            st.session_state.rwy1=r1; st.session_state.rwy2=r2
-            st.session_state.stats=stats; st.session_state.cxlim=cxlim
-            st.session_state.ready=True
+            st.session_state.diagrams = diags;
+            st.session_state.freq = freq
+            st.session_state.rwy1 = r1;
+            st.session_state.rwy2 = r2
+            st.session_state.stats = stats;
+            st.session_state.cxlim = cxlim
+            st.session_state._tbl_cols = tbl_cols
+            st.session_state._t2_names = t2_names
+            st.session_state._unit = spd_unit
+            st.session_state.ready = True
             st.success(f" {len(diags)} Diagram(s) Generated!")
 
     # ── RESULTS ───────────────────────────────────────────────────
     if st.session_state.ready and st.session_state.diagrams:
-        freq=st.session_state.freq; r1=st.session_state.rwy1
-        r2=st.session_state.rwy2;   stats=st.session_state.stats
-        cx=st.session_state.cxlim;  diags=st.session_state.diagrams
-        c1=rwy_cov(freq,r1,cx); c2=rwy_cov(freq,r2,cx)
-        cc=comb_cov(freq,r1,r2,cx); icao=cc>=95.
+        freq = st.session_state.freq;
+        r1 = st.session_state.rwy1
+        r2 = st.session_state.rwy2;
+        stats = st.session_state.stats
+        cx = st.session_state.cxlim;
+        diags = st.session_state.diagrams
+        c1 = rwy_cov(freq, r1, cx);
+        c2 = rwy_cov(freq, r2, cx)
+        cc = comb_cov(freq, r1, r2, cx);
+        icao = (cc + stats["calm"]) >= 95.
 
-        st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
-        st.markdown('<div class="ar-lbl">Analysis Results</div>',unsafe_allow_html=True)
+        st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="ar-lbl">Analysis Results</div>', unsafe_allow_html=True)
 
         st.markdown(
             '<div class="ar-stats">'
-            +sc(f"{stats['total']:,}","Total Obs.")
-            +sc(f"{stats['calm']:.1f}%","Calm <6")
-            +sc(f"{stats['op']:.1f}%","6–60 km/h")
-            +sc(f"{stats['avg']:.0f}","Avg km/h")
-            +sc(stats['dom'],"Dominant Dir.")
-            +sc(f"{cc:.1f}%","Coverage")
-            +'</div>',unsafe_allow_html=True)
+            + sc(f"{stats['total']:,}", "Total Obs.")
+            + sc(f"{stats['calm']:.1f}%", "Calm")
+            + sc(f"{stats['op']:.1f}%", f"Operational ({st.session_state._unit})")
+            + sc(f"{stats['avg']:.0f}", f"Avg {st.session_state._unit}")
+            + sc(stats['dom'], "Dominant Dir.")
+            + sc(f"{cc:.1f}%", "Coverage")
+            + '</div>', unsafe_allow_html=True)
 
-        badge=(f'<span class="ar-pass">&#10003; ICAO PASS</span>'
-               if icao else f'<span class="ar-fail">&#10007; ICAO FAIL</span>')
+        badge = (f'<span class="ar-pass">&#10003; ICAO PASS</span>'
+                 if icao else f'<span class="ar-fail">&#10007; ICAO FAIL</span>')
         st.markdown(f"""<div class="ar-cov">
           &#9992; <b>{rwy_lbl(r1)}</b>: {c1:.1f}%
           &nbsp;&middot;&nbsp; &#9992; <b>{rwy_lbl(r2)}</b>: {c2:.1f}%
           &nbsp;&middot;&nbsp; Combined: <b>{cc:.1f}%</b>
-          &nbsp;&middot;&nbsp; CW Limit: <b>{cx:.1f} km/h</b>
+          &nbsp;&middot;&nbsp; CW Limit: <b>{cx:.1f} {st.session_state._unit}</b>
           &nbsp;&middot;&nbsp; ICAO &ge;95%: {badge}
-        </div>""",unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
         # ── FREQUENCY TABLE — custom toggle, no expander ──────────
         tog_lbl = "▲ Hide Frequency Table" if st.session_state.show_table else "▼ Show Frequency Table"
-        st.markdown(f'<div style="margin:.5rem 0 .3rem;">',unsafe_allow_html=True)
+        st.markdown(f'<div style="margin:.5rem 0 .3rem;">', unsafe_allow_html=True)
         if st.button(tog_lbl, key="tog_tbl"):
             st.session_state.show_table = not st.session_state.show_table
             st.rerun()
-        st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.show_table:
-            st.markdown(freq_table_html(freq, T), unsafe_allow_html=True)
+            st.markdown(freq_table_html(freq, T, st.session_state._tbl_cols, st.session_state._unit),
+                        unsafe_allow_html=True)
             # Export CSV button — always visible below table
-            ec1,ec2=st.columns([2,3])
+            ec1, ec2 = st.columns([2, 3])
             with ec1:
                 st.download_button(
                     label="⬇  Export Frequency Table CSV",
-                    data=freq_to_csv(freq),
+                    data=freq_to_csv(freq, st.session_state._tbl_cols),
                     file_name="wind_frequency_data.csv",
                     mime="text/csv",
                     key="csv_dl")
 
         # ── DIAGRAM PREVIEWS — always white ───────────────────────
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown('<div class="ar-lbl">Diagram Previews</div>',unsafe_allow_html=True)
-        DLBL={"t1s":"Type I — Single","t1m":"Type I — Multi",
-              "t2s":"Type II — Single","t2m":"Type II — Multi"}
-        vis=[k for k in ["t1s","t1m","t2s","t2m"] if k in diags]
-        for ri in range(0,len(vis),2):
-            row_k=vis[ri:ri+2]; rcols=st.columns(len(row_k),gap="large")
-            for ci,key in enumerate(row_k):
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="ar-lbl">Diagram Previews</div>', unsafe_allow_html=True)
+        DLBL = {"t1s": "Type I — Single", "t1m": "Type I — Multi",
+                "t2s": "Type II — Single", "t2m": "Type II — Multi"}
+        vis = [k for k in ["t1s", "t1m", "t2s", "t2m"] if k in diags]
+        for ri in range(0, len(vis), 2):
+            row_k = vis[ri:ri + 2];
+            rcols = st.columns(len(row_k), gap="large")
+            for ci, key in enumerate(row_k):
                 with rcols[ci]:
                     st.markdown(f'<div class="ar-dlbl">{DLBL[key]}</div>',
                                 unsafe_allow_html=True)
-                    st.markdown('<div class="ar-diag-white">',unsafe_allow_html=True)
-                    st.image(diags[key],use_container_width=True)
-                    st.markdown('</div>',unsafe_allow_html=True)
+                    st.markdown('<div class="ar-diag-white">', unsafe_allow_html=True)
+                    st.image(diags[key], use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
         # ── PDF DOWNLOAD ──────────────────────────────────────────
-        st.markdown('<div class="ar-hr"></div>',unsafe_allow_html=True)
-        st.markdown('<div class="ar-lbl">Export PDF Report</div>',unsafe_allow_html=True)
+        st.markdown('<div class="ar-hr"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="ar-lbl">Export PDF Report</div>', unsafe_allow_html=True)
 
-        _pn=st.session_state.get('_pdf_name','')
-        _pr=st.session_state.get('_pdf_roll','')
-        _ps=st.session_state.get('_pdf_site','')
-        _pl=st.session_state.get('_pdf_logo',None)
-
+        _pn = st.session_state.get('_pdf_name', '')
+        _pr = st.session_state.get('_pdf_roll', '')
+        _ps = st.session_state.get('_pdf_site', '')
+        _pl = st.session_state.get('_pdf_logo', None)
 
         st.info("Download you Report.")
 
-        _,dc,_=st.columns([1,2,1])
+        _, dc, _ = st.columns([1, 2, 1])
         with dc:
             with st.spinner("Preparing PDF…"):
-                pdf_b=build_pdf(diags,_pn,_pr,_ps,_pl)
+                pdf_b = build_pdf(diags, _pn, _pr, _ps, _pl)
             st.download_button("&#11015;  DOWNLOAD  PDF  REPORT  ",
-                               data=pdf_b,file_name="WindRose_Diagram.pdf",
-                               mime="application/pdf",use_container_width=True)
+                               data=pdf_b, file_name="WindRose_Diagram.pdf",
+                               mime="application/pdf", use_container_width=True)
 
     # ── FOOTER ────────────────────────────────────────────────────
     st.markdown(f"""
@@ -1484,7 +1640,8 @@ def main():
            letter-spacing:.2em;color:{T['acc']};margin:.7rem 0 .3rem;">MADE BY MANIA SIDDIQUI</div>
       <div class="ar-footer-line">
         Contact: <a class="ar-footer-link" href="mailto:mania siddiqui@gmail.com">maniasiddiqui@gmail.com</a>
-      
-    </div>""",unsafe_allow_html=True)
+
+    </div>""", unsafe_allow_html=True)
+
 
 main()
